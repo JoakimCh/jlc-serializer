@@ -4,7 +4,7 @@
   "author": "Joakim L. Christiansen (https://joakimch.github.io)",
   "license": "MIT",
   "type": "module",
-  "main": "source/jlc-serializer.js",
+  "main": "source/streamable-binary-serializer.js",
   "files": [
     "source/*"
   ],

@@ -1,5 +1,5 @@
 
-import * as d from '../streamable-binary-serializer.js'
+import {BinaryTemplate, t} from '../source/streamable-binary-serializer.js'
 
 const object = {
   age: 37,
@@ -16,22 +16,22 @@ const object = {
 }
 
 const binaryTemplate = {
-  age: d.u8,
-  name: d.string(),
-  eMail: d.string({regExp: d.rxp_email}),
+  age: t.u8,
+  name: t.string(),
+  eMail: t.string({regExp: t.rxp_email}),
   subObject: {
-    binarySecret: d.bytes(10),
-    favoriteAnimals: d.array(d.string()),
-    ownedAnimals: d.array({
-      type: d.string(),
-      name: d.string(),
+    binarySecret: t.bytes(10),
+    favoriteAnimals: t.array(t.string()),
+    ownedAnimals: t.array({
+      type: t.string(),
+      name: t.string(),
     })
   }
 }
 
-const {objectToBinary_readable, binaryToObject_writable} = d.template(binaryTemplate)
-const readable = objectToBinary_readable(object) // encode object
-const writable = binaryToObject_writable()       // decode object
+const {getReadable, getWritable} = new BinaryTemplate(binaryTemplate)
+const readable = getReadable(object) // encode object
+const writable = getWritable()       // decode object
 
 // For fun compress and decompress first:
 await readable.pipeThrough(new   CompressionStream('deflate'))

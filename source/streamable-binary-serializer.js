@@ -295,7 +295,7 @@ export class BinaryTemplate {
   }
 
   /** Reads binary data from a readable and returns the result (according to the template). */
-  async fromReadable(readable) {
+  fromReadable = async (readable) => {
     if (!(readable instanceof ReadableStream)) 
       throw new SerializerError('readable must be an instance of ReadableStream.')
     const chunks = []
@@ -311,7 +311,7 @@ export class BinaryTemplate {
   }
 
   /** Writes the binary serialized value into the writable (according to the template). */
-  async intoWritable(value, writable) {
+  intoWritable = async (value, writable) => {
     if (!(writable instanceof WritableStream)) 
       throw new SerializerError('writable must be an instance of WritableStream.')
     const s = new this.#Serializer(this.#config)
@@ -332,10 +332,10 @@ export class BinaryTemplate {
   }
 
   /** Returns a readable stream which can be used to read the binary serialized value. */
-  getReadable(value) {
+  getReadable = (value) => {
     const s = new this.#Serializer(this.#config)
     try {        
-      s.write(template, value)
+      s.write(this.#template, value)
       s.finish()
       // s.pushBytes() // flush the scratch buffer
     } catch (error) {
@@ -360,7 +360,7 @@ export class BinaryTemplate {
   }
 
   /** Returns a writable stream which can be used to deserialize binary data. The writable.result is a promise which will resolve with the result when done or reject on an error. */
-  getWritable() {
+  getWritable = () => {
     let resolve, reject
     const resultPromise = new Promise((resolve_, reject_) => {
       resolve = resolve_
@@ -375,8 +375,8 @@ export class BinaryTemplate {
         reject(reason)
       },
       close: () => {
+        const s = new this.#Serializer({...this.#config, chunks})
         try {
-          const s = new this.#Serializer({...this.#config, chunks})
           resolve(s.read(this.#template))
         } catch (error) {
           reject(error)

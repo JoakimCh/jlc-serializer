@@ -49,7 +49,7 @@ Deno.test('bytes', async (test) => {
     }
     const bytes  = template.toBytes(object)
     const result = template.fromBytes(bytes)
-    for (const key in template) {
+    for (const key in object) {
       const v = object[key]
       const uint8Array = new Uint8Array(v.buffer, v.byteOffset, v.byteLength)
       assert.assertEquals(uint8Array, result[key])
