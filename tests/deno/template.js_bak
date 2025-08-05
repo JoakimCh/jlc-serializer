@@ -1,0 +1,279 @@
+
+import * as assert from "std/assert/mod.ts"
+import {BinaryTemplate, t, SerializerError} from 'streamable-binary-serializer'
+import {bytesToHex} from '../tooling.js'
+
+Deno.test('every template type', async (test) => {
+  await test.step('string', () => {
+    const template = new BinaryTemplate({
+      a: t.string(5),
+      b: t.string(t.zeroTerminated),
+      c: t.string(t.u8),
+      d: t.string(t.u16),
+      e: t.string(t.u32),
+    }, {littleEndian: false})
+    const object = {
+      a: 'hell\0',
+      b: 'hello',
+      c: 'hello \0 world',
+      d: 'hello \0 world',
+      e: 'hello \0 world',
+    }
+    const bytes = template.toBytes(object)
+    assert.assertEquals(bytesToHex(bytes), '68656C6C0068656C6C6F000D68656C6C6F200020776F726C64000D68656C6C6F200020776F726C640000000D68656C6C6F200020776F726C64')
+    const result = template.fromBytes(bytes)
+    assert.assertEquals(object, result)
+    // writing zero terminated string with zero must throw
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.string())
+      template.toBytes('Must\0throw!')
+    }, SerializerError)
+    // writing different size than hardcoded must throw
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.string(5))
+      template.toBytes('123456')
+    }, SerializerError)
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.string(5))
+      template.toBytes('1234')
+    }, SerializerError)
+  })
+
+  await test.step('u8,u16,u32,u64, i8,i16,i32,i64, f32,f64', () => {
+    const template = new BinaryTemplate({
+      a: t.u8,
+      b: t.u16,
+      c: t.u32,
+      d: t.u64,
+
+      e: t.i8,
+      f: t.i16,
+      g: t.i32,
+      h: t.i64,
+
+      i: t.f32,
+      j: t.f64,
+
+      k: t.i8,
+      l: t.i16,
+      m: t.i32,
+      n: t.i64,
+    }, {littleEndian: false})
+    const object = {
+      a: 0xFF,
+      b: 0xFFFF,
+      c: 0xFFFF_FFFF,
+      d: 0xFFFF_FFFF_FFFF_FFFFn,
+      e: 0x7F,
+      f: 0x7FFF,
+      g: 0x7FFF_FFFF,
+      h: 0x7FFF_FFFF_FFFF_FFFFn,
+      i: 123456.5,
+      j: 0.01234567890123456789,
+      k: -0x80, // -(0x7F + 1)
+      l: -0x8000,
+      m: -0x8000_0000,
+      n: -0x8000_0000_0000_0000n,
+    }
+    const bytes  = template.toBytes(object)
+    assert.assertEquals(bytesToHex(bytes), 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF7F7FFF7FFFFFFF7FFFFFFFFFFFFFFF47F120403F8948B0F90591E6808000800000008000000000000000')
+    const result = template.fromBytes(bytes)
+    assert.assertEquals(object, result)
+    // overflow must throw
+    const table = [
+      [ 'u8', 0xFF, 0],
+      ['u16', 0xFFFF, 0],
+      ['u32', 0xFFFF_FFFF, 0],
+      [ 'i8', 0x7F, -0x80],
+      ['i16', 0x7FFF, -0x8000],
+      ['i32', 0x7FFF_FFFF, -0x8000_0000],
+      ['u64', 0xFFFF_FFFF_FFFF_FFFFn, 0n],
+      ['i64', 0x7FFF_FFFF_FFFF_FFFFn, -0x8000_0000_0000_0000n],
+    ]
+    let error
+    for (const [type, max, min] of table) {
+      error = assert.assertThrows(() => {
+        const template = new BinaryTemplate(t[type])
+        template.toBytes(typeof max == 'bigint' ? max + 1n : max + 1)
+      }, SerializerError, 'overflow')
+      // assert.assertStringIncludes(error.cause.message, 'overflow')
+      error = assert.assertThrows(() => {
+        const template = new BinaryTemplate(t[type])
+        template.toBytes(typeof min == 'bigint' ? min - 1n : min - 1)
+      }, SerializerError, 'overflow')
+      // assert.assertStringIncludes(error.cause.message, 'overflow')
+    }
+    // only numbers
+    error = assert.assertThrows(() => {
+      new BinaryTemplate(t.u8).toBytes('1')
+    }, SerializerError, 'a number')
+    // assert.assertStringIncludes(error.cause.message, 'a number')
+    // integer not float
+    assert.assertThrows(() => {
+      new BinaryTemplate(t.u8).toBytes(0.1)
+    }, SerializerError)
+  })
+
+  await test.step('bigInt, bigUint', () => {
+    const template = new BinaryTemplate({
+      a: t.bigInt(),
+      b: t.bigUint(),
+    }, {littleEndian: false})
+    const object = {
+      a: -12345678901234567890n,
+      b:  12345678901234567890n,
+    }
+    const bytes  = template.toBytes(object)
+    // assert.assertEquals(bytesToHex(bytes), 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF7F7FFF7FFFFFFF7FFFFFFFFFFFFFFF47F120403F8948B0F90591E6808000800000008000000000000000')
+    const result = template.fromBytes(bytes)
+    assert.assertEquals(object, result)
+    // only BigInt or number
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.u64)
+      template.toBytes('1')
+    }, SerializerError)
+    // only unsigned BigInt
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.u64)
+      template.toBytes(-1n)
+    }, SerializerError)
+  })
+
+  await test.step('bytes', () => {
+    const arrayBuffer = new ArrayBuffer(0xFF)
+    const dataView = new DataView(arrayBuffer)
+    dataView.setInt8(0x00, 0xFF)
+    dataView.setInt8(0xFE, 0xFF)
+
+    const template = new BinaryTemplate({
+      a: t.bytes(3),
+
+      b: t.bytes(t.u8),
+      c: t.bytes(t.u16),
+      d: t.bytes(t.u32),
+      e: t.bytes(t.u64),
+
+      f: t.bytes(t.i8),
+      g: t.bytes(t.i16),
+      h: t.bytes(t.i32),
+      i: t.bytes(t.i64),
+
+      j: t.bytes(t.u8),
+      k: t.bytes(t.u8),
+
+      l: t.bytes(t.u8),
+    }, {littleEndian: false})
+    const object = {
+      a: new Uint8Array([1,2,3]),
+      
+      b: new Int8Array([-1,2,3]),
+      c: new Int16Array([-1,2,3]),
+      d: new Int32Array([-1,2,3]),
+      e: new BigInt64Array([-1n,2n,3n]),
+
+      f: new Uint8Array([1,2,3]),
+      g: new Uint16Array([1,2,3]),
+      h: new Uint32Array([1,2,3]),
+      i: new BigUint64Array([1n,2n,3n]),
+
+      j: new Float32Array([1.1, 2.2, 3.3]),
+      k: new Float64Array([1.1, 2.2, 3.3]),
+
+      l: dataView
+    }
+    const bytes  = template.toBytes(object)
+    const result = template.fromBytes(bytes)
+    for (const key in template) {
+      const v = object[key]
+      const uint8Array = new Uint8Array(v.buffer, v.byteOffset, v.byteLength)
+      assert.assertEquals(uint8Array, result[key])
+    }
+    // throw if we forget to call the template function
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.bytes)
+      template.toBytes(new Uint8Array([1,2,3]))
+    }, SerializerError)
+    // throw if trying to write an ArrayBuffer directly
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.bytes())
+      template.toBytes(new ArrayBuffer(8))
+    }, SerializerError)
+    // throw on invalid types
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.bytes())
+      template.toBytes([1,2,3])
+    }, SerializerError)
+  })
+
+  await test.step('typed arrays', () => {
+    const template = new BinaryTemplate({
+      a: t.typedArray(Uint8ClampedArray, 4),
+      b: t.typedArray(Uint8Array, 4),
+      c: t.typedArray(Uint16Array, 4),
+      d: t.typedArray(Uint32Array, 4),
+      e: t.typedArray(BigUint64Array, 4),
+      f: t.typedArray(Int8Array, 4),
+      g: t.typedArray(Int16Array, 4),
+      h: t.typedArray(Int32Array, 4),
+      i: t.typedArray(BigInt64Array, 4),
+      j: t.typedArray(Float32Array, 4),
+      k: t.typedArray(Float64Array, 4),
+    })
+    const object = {
+      a: new Uint8ClampedArray([1,2,3,4]),
+      b: new Uint8Array([1,2,3,4]),
+      c: new Uint16Array([1,2,3,4]),
+      d: new Uint32Array([1,2,3,4]),
+      e: new BigUint64Array([1n,2n,3n,4n]),
+      f: new Int8Array([1,2,3,4]),
+      g: new Int16Array([1,2,3,4]),
+      h: new Int32Array([1,2,3,4]),
+      i: new BigInt64Array([1n,2n,3n,4n]),
+      j: new Float32Array([1,2,3,4]),
+      k: new Float64Array([1,2,3,4]),
+    }
+    const bytes  = template.toBytes(object)
+    const result = template.fromBytes(bytes)
+    assert.assertEquals(object, result)
+    // throw on invalid types
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.typedArray(Uint8Array, 4))
+      template.toBytes([1,2,3])
+    }, SerializerError)
+    // throw on size mismatch
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.typedArray(Uint8Array, 4))
+      template.toBytes(new Uint8Array([1,2,3]))
+    })
+  })
+
+  await test.step('bit fields', () => {
+    // test byte order and correct values
+    const template = new BinaryTemplate(t.bitField({
+      a: 2, b:6, c: 16
+    }))
+    const value = {
+      a: 0b11, b: 0b00_1111, c: 0b0000_0000_1111_1111
+    }
+    const bytes = template.toBytes(value)
+    const result = template.fromBytes(bytes)
+    assert.assertEquals(value, result)
+    // throw on overflow
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.bitField({
+        a: 2, b:6, c: 16
+      }))
+      const value = {
+        a: 0b11, b: 0b00_1111, c: -0b0000_0000_1111_1111
+      }
+      template.toBytes(value)
+    }, SerializerError)
+    // throw on type mismatch
+    assert.assertThrows(() => {
+      const template = new BinaryTemplate(t.bitField({a: 2}))
+      template.toBytes(1)
+    })
+  })
+
+
+})

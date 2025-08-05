@@ -1,0 +1,7 @@
+{
+  "type": "module",
+  "dependencies": {
+    "msgpack-lite": "^0.1.26",
+    "msgpackr": "^1.9.9"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "streamable-binary-serializer",
+  "version": "0.9.0",
+  "author": "Joakim L. Christiansen (https://joakimch.github.io)",
+  "license": "MIT",
+  "type": "module",
+  "main": "source/streamable-binary-serializer.js",
+  "files": [
+    "source/*"
+  ],
+  "repository": "github:JoakimCh/streamable-binary-serializer",
+  "funding": "https://joakimch.github.io/funding.html",
+  "description": "",
+  "keywords": [
+    "streamable",
+    "binary",
+    "serializer",
+    "serialization"
+  ]
+}
