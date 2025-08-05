@@ -1,82 +1,11 @@
 
 import * as dgram from 'node:dgram'
+import {BinaryTemplate, extendSerializer} from '../source/streamable-binary-serializer.js'
+import dnsExtension from './dnsStringExt.js'
 
-import {BinaryTemplate, t, Serializer} from '../source/streamable-binary-serializer.js'
+const {t, ExtendedSerializer} = extendSerializer(dnsExtension)
 
-t.dnsString = Symbol('dnsString')
-
-/** Extended with DNS string support. */
-class BinarySerializerExt extends Serializer {
-  #dnsStringCache = new Map()
-
-  dnsString(string) {
-    if (this.writing) {
-      this.write_dnsString(string || '')
-    } else {
-      return this.read_dnsString()
-    }
-  }
-
-  read_dnsString() {
-    let string = ''
-    do {
-      const labelOffset = this.offset
-      const byte = this.u8()
-      if (byte == 0) break // end of string
-      if (byte <= 0b0011_1111) { // if label follows
-        const label = this.string(byte) // byte as length
-        if (string.length) string += '.'
-        string += label
-        this.#dnsStringCache.set(labelOffset, label)
-      } else { // if pointer follows (first two bits are set)
-        let label, pointerTarget = this.u8() | (byte & 0b0011_1111) << 8
-        this.#dnsStringCache.set(labelOffset, pointerTarget)
-        while (label = this.#dnsStringCache.get(pointerTarget)) {
-          if (typeof label == 'string') {
-            if (string.length) string += '.'
-            string += label
-            pointerTarget += label.length + 1
-          } else { // is a pointer
-            pointerTarget = label
-          }
-        }
-        break // following a pointer terminates the string
-      }
-    } while (true)
-    return string
-  }
-  
-  write_dnsString(string) {
-    string = string.toLowerCase()
-    const updateCache = (string, offset) => {
-      if (!this.#dnsStringCache.has(string)) this.#dnsStringCache.set(string, offset)
-    }
-    const writeLabels = (labelArr, strArr) => {
-      const tmpArr = [...labelArr] // copy it
-      for (const label of labelArr) {
-        updateCache([...tmpArr, ...strArr].join('.'), this.offset)
-        tmpArr.shift()
-        this.string(t.u8, label)
-      }
-    }
-    const strArr = string.split('.'), labelArr = []
-    const labelCount = strArr.length
-    let i, labelOffset
-    for (i=0; i<labelCount; i++) {
-      labelOffset = this.#dnsStringCache.get(strArr.join('.'))
-      if (labelOffset) break
-      labelArr.push(strArr.shift())
-    }
-    if (labelOffset) { // if previously written
-      if (i) writeLabels(labelArr, strArr) // but not the whole part
-      this.u16(labelOffset | 0b1100_0000 << 8) // write pointer
-    } else { // no parts previously written
-      writeLabels(labelArr, strArr)
-      this.u8(0) // then put a zero
-    }
-  }
-}
-
+// Here we define the binary template for the response records contained in a DNS packet:
 const t_dnsResponseRecord = {
   name: t.dnsString,
   type: t.u16,
@@ -93,6 +22,7 @@ const t_dnsResponseRecord = {
   }
 }
 
+// Here we define the binary template for a DNS packet:
 const t_dnsPacket = {
   transactionId: t.u16,
   flags: t.bitField({
@@ -123,13 +53,13 @@ const t_dnsPacket = {
 
 const dnsPacket = new BinaryTemplate(t_dnsPacket, {
   littleEndian: false, // (network protocols are usually big endian)
-  serializer: BinarySerializerExt
+  serializer: ExtendedSerializer // use our extended version
 })
 
 dgram.createSocket('udp4')
 .once('connect', function() {
   console.log('Sending DNS query...')
-  this.send(dnsPacket.toBytes({
+  this.send(dnsPacket.toBytes({ // (we only need to specify the "non-empty" values)
     transactionId: 0x1234,
     flags: {
       recursionDesired: 1 // other flags defaults to 0
@@ -144,5 +74,6 @@ dgram.createSocket('udp4')
   this.close()
   console.log('Response received:')
   console.dir(dnsPacket.fromBytes(data), {depth: Infinity})
+  // And look at that; the packet is easily readable as a normal JavaScript object!
 })
 .connect(53, '1.1.1.1') // (the Cloudflare DNS server)
