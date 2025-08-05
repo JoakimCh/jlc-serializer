@@ -1,5 +1,5 @@
 /*
-  https://github.com/JoakimCh/streamable-binary-serializer
+  https://github.com/JoakimCh/jlc-serializer
   MIT License (see license.txt)
   Created by Joakim L. Christiansen
 */
