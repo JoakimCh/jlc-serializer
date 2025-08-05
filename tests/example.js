@@ -38,7 +38,7 @@ await readable.pipeThrough(new   CompressionStream('deflate'))
               .pipeThrough(new DecompressionStream('deflate'))
               .pipeTo(writable)
 
-console.log(writable.result) // todo: let writeable have a done promise which returns result
+console.log(await writable.result)
 
 async function readableToBytes(readable) {
   const chunks = []
